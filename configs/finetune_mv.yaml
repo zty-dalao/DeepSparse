@@ -1,0 +1,26 @@
+model:
+  name: model_v7.Model_mv
+  encoder:
+    # encoder_type: mednextv1
+    # n_blocks: 2
+    # exp_r: 4
+    encoder_type: base
+    base_ch: 16
+    n_layer: 3
+    ch_up: 2
+  decoder:
+    out_ch: 128
+    n_conv3d: 2
+  point_decoder:
+    mlp_chs: [128, 64, 16, 1]
+  codebook:
+    n_embed: 512
+
+dataset:
+  name: dst_lr.CBCT_dataset_LR
+  root_dir: ../../datasets
+  lr_res: 32
+  sampling_method: v2
+  random_num_views: False
+  min_views: 10
+  

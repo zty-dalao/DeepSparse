@@ -1,0 +1,20 @@
+model:
+  name: model_v5.Model_mv
+  pretrained_name: model_v5.Model_mixed
+  encoder:
+    base_ch: 16
+    n_layer: 3
+    ch_up: 1.7
+  decoder:
+    out_ch: 64
+    n_conv3d: 2
+  point_decoder:
+    mlp_chs: [64, 16, 1]
+  codebook:
+    n_embed: 512
+
+dataset:
+  name: dst_lr.CBCT_dataset_LR
+  root_dir: ../../datasets
+  lr_res: 32
+  

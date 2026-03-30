@@ -1,0 +1,18 @@
+model:
+  name: model.Model_ct
+  encoder:
+    base_ch: 16
+    n_layer: 3
+    ch_up: 1.7
+  decoder:
+    out_ch: 64
+    n_conv3d: 2
+  point_decoder:
+    mlp_chs: [64, 16, 1]
+  codebook:
+    n_embed: 512
+
+dataset:
+  name: dst_ct.CBCT_dataset_CT
+  root_dir: ../../datasets
+  
