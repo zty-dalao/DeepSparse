@@ -14,7 +14,7 @@
 
 <br>
 
-This repository contains the official implementation of **DeepSparse: A Foundation Model for Sparse-View CBCT Reconstruction**, accepted in *IEEE Transactions on Medical Imaging* (TMI), 2026.
+This repository contains the official implementation of **[DeepSparse: A Foundation Model for Sparse-View CBCT Reconstruction](https://ieeexplore.ieee.org/document/11436116/)**, accepted in *IEEE Transactions on Medical Imaging* (TMI), 2026.
 
 For any questions regarding this repository, please contact [jchenhu@connect.ust.hk](mailto:jchenhu@connect.ust.hk).
 
