@@ -107,7 +107,7 @@ To download with `huggingface-cli`:
 
 ```bash
 pip install huggingface-hub hf-transfer
-HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download HajihajihaJimmy/DeepSparse --repo-type dataset --local-dir ./logs
+HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download HajihajihaJimmy/DeepSparse --local-dir ./logs
 ```
 
 ## :blue_book: Citation
