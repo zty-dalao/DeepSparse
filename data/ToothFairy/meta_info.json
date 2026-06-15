@@ -1,10 +1,9 @@
 {
-    "dataset_config": "./config+new.yaml",
-    "image": "./processed+new/images/{}.nii.gz",
-    "projs": "./processed+new/projections/{}.pickle",
-    "projs_vis": "./processed+new/projections_vis/{}.png",
-    "blocks_vals": "./processed+new/blocks/{}_block-{}.npy",
-    "blocks_coords": "./processed+new/blocks/blocks_coords.npy",
+    "dataset_config": "./config.yaml",
+    "image": "processed/images/{}.nii.gz",
+    "projs": "processed/projections/{}.pickle",
+    "blocks_vals": "processed/blocks/{}_block-{}.npy",
+    "blocks_coords": "processed/blocks/blocks_coords.npy",
     "train": [
         "P1",
         "P100",

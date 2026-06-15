@@ -60,6 +60,7 @@ class Projector:
         )[:-1] + config['start_angle'] / 180 * np.pi
 
     def __call__(self, image):
+        image = image.astype(np.float32)    # tigre requires float32 input
         projections = tigre.Ax(
             image.transpose(2, 1, 0).copy(), # [z, y, x]
             self._geo, 

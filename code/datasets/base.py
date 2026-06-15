@@ -4,6 +4,20 @@ import yaml
 import scipy
 import pickle
 import numpy as np
+import sys
+
+# ======解决ModuleNotFoundError: No module named 'numpy._core.numeric'错误=========
+# Compatibility aliases for dataset pickles created with older NumPy versions.
+# Some pickled files reference internal modules like numpy._core.numeric, which
+# may not exist in newer NumPy releases. We map these names to the current
+# numpy.core modules so pickle.load can still succeed.
+if 'numpy._core.numeric' not in sys.modules:
+    sys.modules['numpy._core.numeric'] = np.core.numeric
+if 'numpy._core.multiarray' not in sys.modules:
+    sys.modules['numpy._core.multiarray'] = np.core.multiarray
+if 'numpy._core.umath' not in sys.modules:
+    sys.modules['numpy._core.umath'] = np.core.umath
+# =================================================================================
 from torch.utils.data import Dataset
 
 from utils import sitk_load
