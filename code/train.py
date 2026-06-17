@@ -8,6 +8,7 @@ from datetime import datetime
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from utils import convert_cuda, load_config
 from evaluate import eval_one_epoch
@@ -82,6 +83,15 @@ if __name__ == '__main__':
             )
         shutil.copyfile(args.cfg_path, os.path.join(save_dir, 'config.yaml'))   # 把本次训练使用的配置文件（args.cfg_path，如 pretrain.yaml）复制到日志目录下，命名为 config.yaml。
                                                                                 # 这样日志目录里始终保存着本次训练的配置，方便之后复现。
+
+        # initialize TensorBoard writer
+        tb_dir = os.path.join(save_dir, 'tensorboard')
+        writer = SummaryWriter(log_dir=tb_dir)
+        print(f'[TensorBoard] logs -> {tb_dir}')
+        print(f'[TensorBoard] launch: tensorboard --logdir {tb_dir} --bind_all')
+        print(f'[TensorBoard] open http://localhost:6006 in browser')
+    else:
+        writer = None   # 非主进程不需要 TensorBoard
 
     # Set min_views via args
     cfg.dataset.min_views = args.min_views
@@ -236,6 +246,15 @@ if __name__ == '__main__':
             loss_list.append(loss.item())
 
         if args.local_rank == 0:    # 分布式训练时，只有 rank 0（主进程）执行打印、保存、评估。
+            # --- TensorBoard: 每个 epoch 记录一次 loss ---
+            if writer is not None:
+                loss = np.mean(loss_list)
+                loss_task = np.mean(loss_task_list)
+                loss_vq = np.mean(loss_vq_list)
+                writer.add_scalar('Loss/total', loss, epoch)
+                writer.add_scalar('Loss/task', loss_task, epoch)
+                writer.add_scalar('Loss/vq', loss_vq, epoch)
+            
             if epoch % 10 == 0:     # 每 10 epoch 打印 loss
                 loss = np.mean(loss_list)
                 loss_task = np.mean(loss_task_list)
@@ -266,7 +285,13 @@ if __name__ == '__main__':
                     met = metrics[dst_name]
                     for key, val in met.items():
                         msg += ', {}: {:.4}'.format(key, val)
+                        if writer is not None:
+                            writer.add_scalar(f'Eval/{dst_name}_{key}', val, epoch)
                 print(msg)                                      # 拼接评估指标并打印。例如：epoch 50, atlas-mini, psnr: 32.15, ssim: 0.9214
         
         if lr_scheduler is not None:                            # 如果配置了 LR scheduler，每个 epoch 调用一次。但本项目 lr_scheduler = None，所以跳过
-            lr_scheduler.step()                                 
+            lr_scheduler.step()
+    
+    if args.local_rank == 0 and writer is not None:
+        writer.close()
+        print(f'[TensorBoard] writer closed. Run: tensorboard --logdir {tb_dir} --bind_all')

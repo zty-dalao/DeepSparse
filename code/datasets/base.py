@@ -57,6 +57,7 @@ dataset_img_dir_dict = {
     'tooth':      'ToothFairy',
     'pelvis':     'PENGWIN',
     'abdomen':    'PANORAMA',
+    'thorax':     'Thorax Fast',
 }
 
 class CBCT_dataset(Dataset):
