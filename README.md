@@ -79,6 +79,8 @@ bash scripts/finetune_s1.sh
 
 Adapts the pretrained backbone to each downstream anatomy (abdomen, pelvis, lung, tooth) across three sparsity regimes (6, 8, 10 views). Checkpoints are saved under `logs/{dataset}+{n_view}v+s1/`.
 
+For thorax fast,we specially draft **finetune_thorax_s1.sh** for thorax fast finetuning on stage 1, **finetune_thorax_s2.sh** is the same case.
+
 ### Finetuning — Stage 2
 
 ```bash
