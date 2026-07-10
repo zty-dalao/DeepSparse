@@ -41,18 +41,18 @@ class WrappedEMAVQ3d(nn.Module):
     
     def forward(self, x, no_update=False):
         '''
-        x：输入 3D 特征，形状一般为 [B, C, D, H, W]。
+        x：输入 3D 特征，形状一般为 [B, C, D, H, W]。x即model_v7.py的102行的feats_3d，因为会传入4次，第1次传入的数据赋值给x，x的shape为torch.Size([2, 128, 32, 32, 32])，最后1次为torch.Size([2, 16, 32, 32, 32])
         no_update：是否禁止 codebook 更新，默认 False。
         '''
         if not self.update:                                 # 如果模块被 freeze() 冻结，则强制开启 no_update。
                                                             # 这样即使外部传 no_update=False，也不会更新 codebook。
             no_update = True
-        x = self.pre_quant(x)                               # 先通过 pre_quant 卷积层对输入特征进行线性变换，准备进入量化器。
-        x, _, loss = self.codebook(x, no_update=no_update)  # 调用 EMAVectorQuantizer 量化输入 x。
+        x = self.pre_quant(x)                               # 先通过 pre_quant 卷积层对输入特征进行线性变换，准备进入量化器。实际上，shape并没有变化，对于torch.Size([2, 128, 32, 32, 32])，变换后还是这个shape
+        x, _, loss = self.codebook(x, no_update=no_update)  # 调用 EMAVectorQuantizer 量化输入 x。x即model_v7.py的102行的feats_3d，因为会传入4次，第1次传入的数据赋值给x，x的shape为torch.Size([2, 128, 32, 32, 32])，最后1次为torch.Size([2, 16, 32, 32, 32])
                                                             # 返回三个值：
-                                                            #   x：量化后特征
+                                                            #   x：量化后特征。即经过码本替换后的
                                                             #   _：诊断信息 (perplexity, encodings, encoding_indices)
-                                                            #   loss：量化 loss
+                                                            #   loss：未替换与替换后的码本的 loss
         x = self.post_quant(x)                              # 通过 post_quant 卷积层把量化后的特征映射回原始通道空间。
         return x, loss
 
@@ -106,7 +106,7 @@ class EmbeddingEMA(nn.Module):
 
     def cluster_size_ema_update(self, new_cluster_size):
         self.cluster_size.data.mul_(self.decay).add_(new_cluster_size, alpha=1 - self.decay)    # 这行的作用是直接更新 cluster_size 参数，使用 EMA 方式将 new_cluster_size 融入到当前的 cluster_size 中。 
-                                                                                                # 更新方式类似于动量更新
+                                                                                                # 更新方式类似于动量更新，更新更为平滑，也因此影响到了 self.cluster_size.sum()的大小，见199行
 
     def embed_avg_ema_update(self, new_embed_avg): 
         self.embed_avg.data.mul_(self.decay).add_(new_embed_avg, alpha=1 - self.decay)          # 这行的作用是直接更新 embed_avg 参数，使用 EMA 方式将 new_embed_avg 融入到当前的 embed_avg 中。
@@ -153,39 +153,39 @@ class EMAVectorQuantizer(nn.Module):
 
     def forward(self, z, no_update=False):
         '''
-        z：输入特征
+        z：输入特征。从WrappedEMAVQ3d类的forward函数的self.codebook调用传入的，把x值赋给z。x即model_v7.py的102行的feats_3d，因为会传入4次，第1次传入的数据赋值给x，x的shape为torch.Size([2, 128, 32, 32, 32])，最后1次为torch.Size([2, 16, 32, 32, 32])
         no_update：是否禁止 EMA 更新；True 时只做量化，不更新 codebook。
         '''
         # z: [b, c, *],b 是 batch size，c 是特征维度，* 是空间维度（如 H, W, D 等）。输入的 z 是需要被量化的特征图。
         # z_q: [b, c, *]
-        z_shape = z.shape[2:]
-        b, c = z.shape[:2]
-        z = z.reshape(b, c, -1)
-        n = z.shape[-1]         # 把空间维度折成一个维度，得到 [b, c, n]，其中 n 是空间位置总数。
-        z = z.transpose(1, 2) # [b, c, n] -> [b, n ,c]，交换1，2维度，即便于后续把每个位置当作一个向量处理。
+        z_shape = z.shape[2:]   # z_shape = torch.Size([32, 32, 32])
+        b, c = z.shape[:2]      # b=2,c=128
+        z = z.reshape(b, c, -1) # 此时z的shape = torch.Size([2, 128, 32768])
+        n = z.shape[-1]         # 把空间维度折成一个维度，得到 [b, c, n]，其中 n 是空间位置总数。   此时n=32768
+        z = z.transpose(1, 2) # [b, c, n] -> [b, n ,c]，交换1，2维度，即便于后续把每个位置当作一个向量处理。    此时z的shape = torch.Size([2, 32768，128])
 
         assert c == self.codebook_dim, f'inconsistent dimension: {c}, required: {self.codebook_dim}'    # 检查输入通道数是否匹配 codebook 维度。
                                                                                                         # 不匹配则报错，避免后续向量距离计算错误。
-        z_flattened = z.reshape(-1, c) # [bn, c].把所有样本和空间位置合并成一个平面向量集合，形状 [b*n, c].
+        z_flattened = z.reshape(-1, c) # [bn, c].把所有样本和空间位置合并成一个平面向量集合，形状 [b*n, c]. ,此时z_flattened.shape=torch.Size([65536, 128])
         
         # 算输入向量到每个 codebook vector 的平方距离。
-        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
-        # [bn, 1] + [k,] + [bn, k] -> [bn, k]
+        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z            z_flattened 形状是 [bn, c]，bn=65536，c=128。第1行计算个输入向量的平方和：||z||^2，结果形状是 [bn, 1]，代表每个输入向量自身的平方长度。第2行，self.embedding.weight 形状是 [k, c]，k 是 codebook 大小，步算每个 codebook 向量的平方和：||e_j||^2，结果形状是 [k]，代表每个 codebook 向量自身的平方长度。第3行是输入向量与每个 codebook 向量的点积矩阵，z_flattened 是 [bn, c]，self.embedding.weight 是 [k, c]，结果是 [bn, k]，每个元素等于 z_i · e_j。
+        # [bn, 1] + [k,] + [bn, k] -> [bn, k]                                           组合起来就是d[i,j] = ||z_i||^2 + ||e_j||^2 - 2 * (z_i · e_j)
         d = z_flattened.pow(2).sum(dim=1, keepdim=True) + \
             self.embedding.weight.pow(2).sum(dim=1) - 2 * \
             torch.einsum('bd,nd->bn', z_flattened, self.embedding.weight)
 
-        encoding_indices = torch.argmin(d, dim=1)                                       # 选出最近的 codebook 索引。
-                                                                                        # 每个输入向量对应一个最小距离的 embedding。
-        z_q = self.embedding(encoding_indices).view(z.shape)                            # 根据索引查表，得到量化后的向量。
-                                                                                        # self.embedding(encoding_indices) 返回 shape [bn, c]，再 reshape 回 [b, n, c]。
-        encodings = F.one_hot(encoding_indices, self.num_tokens).type(z.dtype)          # 生成 one-hot 矩阵，shape [bn, num_tokens]。
-                                                                                        # 这个矩阵表示每个向量被分配到哪个 codebook entry。
+        encoding_indices = torch.argmin(d, dim=1)                                       # 选出最近的 codebook 索引。dim=1即沿着码本维度（512）。encoding_indices.shape = torch.Size([65536])
+                                                                                        # 每个输入向量对应一个最小距离的 embedding。因为batch=2，体分辨率为32^3，一共65536，要针对所有点，找出各个点对应的最近的码本向量
+        z_q = self.embedding(encoding_indices).view(z.shape)                            # 根据索引查表，得到量化后的向量。nn.Parameter 是 torch.Tensor 的子类，本质上还是一个张量。可以通过索引直接访问。.view(z.shape)作用是把量化后的扁平向量恢复成原始张量形状。
+                                                                                        # self.embedding(encoding_indices) 返回 shape [bn, c]，再 reshape 回 [b, n, c]。z_q.shape = torch.Size([2, 32768, 128])
+        encodings = F.one_hot(encoding_indices, self.num_tokens).type(z.dtype)          # 生成 one-hot 矩阵，shape [bn, num_tokens]。torch.Size([65536, 512])。这里的512，指的是codebook中有多少个码本向量。
+                                                                                        # 这个矩阵表示每个向量被分配到哪个 codebook entry。比如65535个行中，秩序要看第2列中有多少个1，就知道codebook中，第2个码本向量被选择了几次
 
         avg_probs = torch.mean(encodings, dim=0)                                        # 计算每个 token 在当前 batch 中的平均激活概率。
-                                                                                        # 等价于该 token 的频率, shape [num_tokens]。
+                                                                                        # 等价于该 token 的频率, shape [num_tokens]。torch.Size([512])
         perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))    # 计算 codebook 使用的 perplexity。计算 perplexity，衡量 codebook 的使用情况。perplexity 越高，说明越多的 token 被使用，越低说明集中在少数 token 上。
-                                                                                        # 这是一个衡量 codebook 向量使用均匀度的指标。
+                                                                                        # 这是一个衡量 codebook 向量使用均匀度的指标。exp内是计算熵，公式：H = - Σ ( p_i * log(p_i) )。然后再进行exp，把熵从“对数空间”映射回“数量空间”，告诉你实际正在工作的码本有多少个。
 
         if self.training and self.embedding.update and (not no_update):                 # 只有在训练模式下，且没有禁用更新时，才进行 EMA 更新。
                                                                                         # self.embedding.update 可以由外部设置成 False，用于冻结 codebook。
@@ -202,13 +202,13 @@ class EMAVectorQuantizer(nn.Module):
                 '''
             
             # EMA cluster size
-            encodings_sum = encodings.sum(0)                        # 计算每个 token 在当前 batch 中被选中的总次数，shape [num_tokens]。
-            self.embedding.cluster_size_ema_update(encodings_sum)   # 更新 cluster_size 的 EMA 统计。
+            encodings_sum = encodings.sum(0)                        # 计算每个 token 在当前 batch 中被选中的总次数，shape [num_tokens]。    encodings_sum.shape = torch.Size([512])，每一列上表明第x+1个码本被选择了多少次
+            self.embedding.cluster_size_ema_update(encodings_sum)   # 更新 cluster_size 的 EMA 统计。换句话说，其实就是更新每个码本的使用次数，用更加平滑的方式（动量更新）
 
             # EMA embedding average
-            embed_sum = encodings.transpose(0,1) @ z_flattened      # 计算每个 token 选中向量的总和，形状 [num_tokens, c]。
+            embed_sum = encodings.transpose(0,1) @ z_flattened      # 计算每个 token 选中向量的总和，形状 [num_tokens, c]。已知encoding.shape=torch.Size([65536, 512])，transpose后为torch.Size([512，65536])z_flattened.shape=torch.Size([65536, 128])。得到[512,128]
                                                                     # 这是 embedding 更新所需的累加和。
-            self.embedding.embed_avg_ema_update(embed_sum)          # 更新 embed_avg 的 EMA 统计。
+            self.embedding.embed_avg_ema_update(embed_sum)          # 动量更新 embed_avg 的 EMA 统计。
             
             # normalize embed_avg and update weight
             self.embedding.weight_update(self.num_tokens)           # 用 cluster_size 和 embed_avg 计算新的 codebook weight。
@@ -221,7 +221,7 @@ class EMAVectorQuantizer(nn.Module):
 
         # preserve gradients
         z_q = z + (z_q - z).detach()                                # 这是 straight-through estimator。
-                                                                    # 前向使用 z_q，反向梯度直接传给 z，不传给 quantized output 的离散选择过程。
+                                                                    # .detach() 切断了 (z_q - z) 的梯度，所以反向时梯度直接原样拷贝给 z（即 encoder 输出），不经过 codebook。
 
         # reshape back to match original input shape
         z_q = z_q.reshape(b, n, c).transpose(1, 2)                  # [bn, c] -> [b, c, n].
@@ -233,7 +233,7 @@ class EMAVectorQuantizer(nn.Module):
             (perplexity, encodings, encoding_indices)：诊断信息
             loss：用于训练的量化 loss
         '''
-        return z_q, (perplexity, encodings, encoding_indices), loss
+        return z_q, (perplexity, encodings, encoding_indices), loss # 返回的z_q是经过码本替换的，shape为torch.Size([2, 128, 32, 32, 32])。perplexity是码本中，所有码本使用次数的信息熵。encoding是使用次数的onehot表示，一列上有几个1表示对应码本使用多少次。encoding_indices表示距离传进来的最近的码本。loss是码本损失
     
     
 if __name__ == '__main__':

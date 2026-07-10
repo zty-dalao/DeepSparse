@@ -1,22 +1,22 @@
 model:
-  name: model_v7.Model_mv
-  encoder:
-    encoder_type: base
-    base_ch: 16
-    n_layer: 3
-    ch_up: 2
+  name: model_v7.Model_mv # 指定模型类：model_v7.py 中的 Model_mv。该模型是多视角编码 + 3D 特征融合 + 点回归结构。
+  encoder:                
+    encoder_type: base    # 选择编码器类型为基础版本（EncoderV_mv 内部会根据这个值创建对应 2D 图像编码器）。
+    base_ch: 16           # 2D 图像编码器起始通道数，决定第一层特征维度。
+    n_layer: 3            # 编码器层数。影响生成的多尺度 3D 特征数量，也影响 Model_mv 中 codebook/decoder 层数，实际会创建 n_layer + 1 个尺度。
+    ch_up: 2              # 通道数上采样倍数，用于每层 encoder 的通道增长。例如每层特征通道可能按这个比率扩展。
   decoder:
-    out_ch: 128
-    n_conv3d: 2
+    out_ch: 128           # 3D decoder 输出通道数。每层 3D 解码器输出的特征维度。
+    n_conv3d: 2           # 每个 decoder block 内的 3D 卷积层数。
   point_decoder:
-    mlp_chs: [128, 64, 16, 1]
+    mlp_chs: [128, 64, 16, 1] # 点预测头的 MLP 通道结构。表示 PointDecoder 的逐层通道数，从点特征到最终预测值。最后输出 1 通道，通常对应单通道体素值。
   codebook:
-    n_embed: 512
+    n_embed: 512          # 码本向量数量。用于离散化 3D 特征表示，影响模型的表达能力和压缩率。Model_mv 中每个 3D 特征尺度都会使用这个大小的 codebook 进行向量量化。
 
 dataset:
-  name: dst_lr.CBCT_dataset_LR
-  root_dir: ./data
-  lr_res: 32
-  sampling_method: v2
-  random_num_views: False
-  min_views: 10
+  name: dst_lr.CBCT_dataset_LR  # 使用 dst_lr.py 中的 CBCT_dataset_LR 数据集类。该类继承 CBCT_dataset，并额外生成低分辨率点网格 points_lr
+  root_dir: ./data        # 数据根目录，所有数据文件从这里开始查找
+  lr_res: 32              # 低分辨率点网格分辨率。CBCT_dataset_LR 会生成 32 x 32 x 32 的点坐标，并将其投影到各投影角度上。直接影响数据集里的低分辨率点采样密度。
+  sampling_method: v2     # 使用 （code/datasets/base.py）CBCT_dataset.sample_projections 中的 v2 分支。这会启用 sample_projections_v2() 逻辑，采用“先选最少视角，再补齐到最大视角并带有 view_mask”方式。
+  random_num_views: False # 不随机选视角数量。训练时始终固定使用 min_views 视角（而不是在 [min_views, max_views] 范围内随机选择）。
+  min_views: 10           # 最少选取的视角数量。在 v2 模式下，默认会先选 10 个真实视角，然后再补齐到 max_views。也就是训练时实际可见的“有效”投影数目为 10。

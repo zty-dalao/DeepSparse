@@ -15,14 +15,17 @@ from evaluate import eval_one_epoch
 
 
 def load_ckpt_safe(model, ckpt):
-    model_dict = model.state_dict()
-    ckpt = {k : v for k, v in ckpt.items() if k in model_dict}
-    model_dict.update(ckpt)
-    model.load_state_dict(model_dict)
+    '''这个函数用于“安全加载 checkpoint”。'''
+    model_dict = model.state_dict()                             # 取当前模型的参数字典
+    ckpt = {k : v for k, v in ckpt.items() if k in model_dict}  # 只保留 checkpoint 中存在于当前模型里的参数
+    model_dict.update(ckpt)                                     # 将筛选后的 checkpoint 参数更新到当前模型参数字典里
+    model.load_state_dict(model_dict)                           # 最后把更新后的参数字典加载回模型
     return model
 
 
 def worker_init_fn(worker_id):
+    '''这个函数用于为 DataLoader 的每个 worker 设定独立随机种子
+    使数据增强、随机采样等操作在多 worker 下更稳定、不重复'''
     np.random.seed((worker_id + torch.initial_seed()) % np.iinfo(np.int32).max)
 
 
@@ -39,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--dst_subset', type=float, default=1.)
 
     parser.add_argument('--local-rank', dest='local_rank', type=int, default=0)
-    parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--local_rank', type=int, default=0)                        # True则执行分布式初始化；否则跳过（单卡非分布式训练）
     parser.add_argument('--dist', action='store_true', default=False)
     parser.add_argument('--mixed_precision', action='store_true', default=False)
     
@@ -60,12 +63,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.dist:
+    if args.dist:                                                                   # True则执行分布式初始化；否则跳过（单卡非分布式训练）
         args.local_rank = int(os.environ["LOCAL_RANK"]) # Make it compatible with different versions of DDP
         torch.distributed.init_process_group(backend="nccl")
         torch.cuda.set_device(args.local_rank)
 
-    cfg = load_config(args.cfg_path)
+    cfg = load_config(args.cfg_path)    # 读取配置文件中的信息并转化为Python字典
     if args.local_rank == 0:    # 只有当前进程的 local_rank 为 0 时，才执行后面的代码块。
                                 # 在分布式训练（DDP）里，local_rank==0 通常是主进程/主 GPU。
                                 # 这段判断的目的是让只有主进程打印参数、保存配置等“只做一次”的工作，避免多个进程重复输出或重复写文件。
@@ -218,7 +221,7 @@ if __name__ == '__main__':
 
             if args.mixed_precision:
                 with autocast(dtype=torch.bfloat16):                                # 上下文管理器，自动把部分计算转为 BF16 精度
-                    pred = model(item)                                              # 前向传播在混合精度下进行
+                    pred = model(item)                                              # 前向传播在混合精度下进行，此时item传送给encoder。作为encoder.py第36行的data参数，item是一个字典，包含了ct、projs、points_proj等信息。这里取出projs，即投影图像。
                     loss_task = loss_func(pred['points_pred'], item['points_gt'])   # MSE(预测, GT)
                     loss_vq = pred.get('loss_vq', torch.tensor(0.).float().cuda())  # codebook 量化 loss（beta 已在内部乘过），如果模型没返回则默认 0
                     loss = loss_task + args.vq_w * loss_vq                          # 总损失，vq_w 控制量化 loss 权重
@@ -231,15 +234,15 @@ if __name__ == '__main__':
                 optimizer.zero_grad()                                               # 清空梯度，准备下一个 batch。
             else:                                                                   # 与混合精度逻辑完全相同，但没有 autocast 和 GradScaler。
                                                                                     # 标准流程：前向 → 算 loss → 反向 → 梯度裁剪 → 更新 → 清零。
-                pred = model(item)
+                pred = model(item)                                                  # 由fintune_thorax_s1的launch.json，知，这一步调用model(item)，即指向model_v7.py的Model_mv的forward函数，从此函数开始运行。返回预测的1w个点的损失和经过替换后codebook的损失
                 loss_task = loss_func(pred['points_pred'], item['points_gt'])
-                loss_vq = pred.get('loss_vq', torch.tensor(0.).float().cuda())
+                loss_vq = pred.get('loss_vq', torch.tensor(0.).float().cuda())      # torch.tensor(0.).float().cuda()的作用是：当 pred 里没有 'loss_vq' 这个键时返回它。
                 loss = loss_task + args.vq_w * loss_vq
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                optimizer.zero_grad()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)             # 梯度裁剪。计算所有模型参数的梯度总范数（L2 范数），如果总范数 > 1.0，则按比例缩小所有梯度，使总范数 = 1.0，如果总范数 ≤ 1.0，不做任何操作，作用：防止梯度爆炸，让训练更稳定
+                optimizer.step()                                                    # 参数更新
+                optimizer.zero_grad()                                               # 梯度清零
 
             loss_task_list.append(loss_task.item())
             loss_vq_list.append(loss_vq.item())

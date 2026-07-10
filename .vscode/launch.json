@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug thorax_s1 6-view (single GPU)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/code/train.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0"
+      },
+      "args": [
+        "--name", "thorax+6v+s1",
+        "--batch_size", "2",
+        "--epoch", "100",
+        "--resume", "0",
+        "--dst_name", "thorax",
+        "--num_views", "24",
+        "--min_views", "6",
+        "--random_views",
+        "--cfg_path", "./configs/finetune_s1.yaml",
+        "--vq_w", "0.1"
+      ],
+      "justMyCode": true
+    }
+  ]
+}
