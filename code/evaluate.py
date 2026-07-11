@@ -1,7 +1,6 @@
 import os
 import csv
 import json
-import time
 import argparse
 import importlib
 import numpy as np
@@ -42,21 +41,37 @@ def eval_one_epoch(model, loader, npoint=50000, save_dir=None, ignore_msg=True, 
 
             if mixed_precision:                         # 如果 mixed_precision=True，使用混合精度推理
                 with autocast(dtype=torch.bfloat16):    # 使用 bfloat16 数据类型进行混合精度推理，autocast 会自动处理张量类型转换
-                    if test_time:                       # 如果 test_time=True，记录推理时间
-                        t_start = time.time()
+                    # ============================================================
+                    # [GPU计时] 单样本完整推理(encode + 分批forward_points)
+                    # ============================================================
+                    gpu_timer_sample = torch.cuda.Event(enable_timing=True)
+                    gpu_timer_sample_end = torch.cuda.Event(enable_timing=True)
+                    gpu_timer_sample.record()
+
                     pred = model(item, is_eval=True, eval_npoint=npoint) # B, 1, N。得到模型预测结果 pred，包含 'points_pred' 键，对应预测的点云数据，点云数据的形状为 (B, 1, N)，其中 B 是 batch size，N 是点云数量
-                    if test_time:
-                        t_end = time.time()
-                        print('inference time:', t_end - t_start)
+
+                    gpu_timer_sample_end.record()
+                    torch.cuda.synchronize()
+
+                    if test_time:                       # 如果 test_time=True，记录推理时间
+                        print(f'[GPU计时] 单样本完整推理耗时 {gpu_timer_sample.elapsed_time(gpu_timer_sample_end):.0f} ms = {gpu_timer_sample.elapsed_time(gpu_timer_sample_end)/1000:.1f} s')
                 output = pred['points_pred']            # 获取模型预测的点云数据
                 output = output[0, 0].data.cpu().float().numpy()    # 将预测结果转为 NumPy 数组，形状为 (N,)，并转换为 CPU 浮点张量。[0,0]的第一个索引是 batch size，第二个索引是通道数
             else:
-                if test_time:
-                    t_start = time.time()
+                # ============================================================
+                # [GPU计时] 单样本完整推理(encode + 分批forward_points)
+                # ============================================================
+                gpu_timer_sample = torch.cuda.Event(enable_timing=True)
+                gpu_timer_sample_end = torch.cuda.Event(enable_timing=True)
+                gpu_timer_sample.record()
+
                 pred = model(item, is_eval=True, eval_npoint=npoint) # B, 1, N
+
+                gpu_timer_sample_end.record()
+                torch.cuda.synchronize()
+
                 if test_time:
-                    t_end = time.time()
-                    print('inference time:', t_end - t_start)
+                    print(f'[GPU计时] 单样本完整推理耗时 {gpu_timer_sample.elapsed_time(gpu_timer_sample_end):.0f} ms = {gpu_timer_sample.elapsed_time(gpu_timer_sample_end)/1000:.1f} s')
                 output = pred['points_pred']
                 output = output[0, 0].data.cpu().numpy()
             

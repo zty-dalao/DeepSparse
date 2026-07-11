@@ -197,3 +197,660 @@ NeRF与CT重建的结合点在于：CT的投影过程与NeRF的渲染过程在�
     - A Review of Low-Dose, Limited-Angle, and Sparse-View CT Reconstruction Models Based on Deep Learning：全面介绍了基于深度学习的低剂量、有限角度和稀疏视角CT重建模型。
 
 你的问题已经触及了该领域的核心与前沿。这些方法各有侧重：双域方法强调物理一致性，NeRF方法追求连续表示，而PnP等方法则注重模块化与灵活性。你可以基于此进一步查阅感兴趣的文献。
+
+
+### 计算时间分析
+![alt text](./pics/image.png)
+- 从不同channel的不同size的2d feature map查询点得到不同channel但是同一分辨率32^3的体素信息共耗时184.320+97.983+46.933+26.348 = 355.531毫秒
+- 直接从原始投影获得多个尺度的2d featurefamp所耗费时间维7491.391-355.531=7135.86 毫秒
+- codebook替换耗费236ms
+- 从多个channel的32^3空间中获取稀疏点向量耗费1.062毫秒
+- 再次从2d featuremap和3d featuremap查找稀疏点的维度信息，耗费时间为622.892毫秒
+- 将每个稀疏点，从368 channel 经过MLP 得到1个channel（得到稀疏点预测的HU值） ，耗费时间为17.136毫秒
+- 此外还发现，计算预测HU值与groud truth，反向传播，时间也是很长的
+
+### 错误改正
+上面的截图没注意到爆显存了
+```bash
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 4958.468 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 287.744 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 175.180 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.002 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 86.711 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.975 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 39.062 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 1447.226 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 288.061 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.924 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 141.777 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.529 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.608 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 374.906 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 205.124 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.021 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 156.455 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.757 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.844 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 329.777 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 202.428 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.095 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 119.259 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.476 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 42.015 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 316.917 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 210.289 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.101 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 140.911 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.281 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.842 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 312.557 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 200.908 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.252 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 114.492 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 48.249 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 40.744 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 321.895 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 245.370 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.309 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 160.777 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.504 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.452 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 341.244 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 228.391 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.973 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 135.792 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.398 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 44.281 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 297.925 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 202.435 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.942 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 155.275 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.464 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 36.225 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 311.440 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 231.732 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.880 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 164.335 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.634 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 40.452 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 347.763 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 212.973 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.931 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 128.290 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.493 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.614 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 408.548 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 280.034 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.937 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 132.115 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.487 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.535 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 326.838 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 218.486 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.898 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 153.547 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.363 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.300 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 343.217 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 229.428 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.944 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 161.416 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.441 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 51.335 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 336.921 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 215.973 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.899 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 123.225 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.495 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 41.186 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 314.757 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 213.832 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.869 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 127.107 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 3.679 ms
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 35.636 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 309.975 ms
+[GPU计时] codebook量化 + 3D decoder融合耗时 207.262 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.898 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 78.111 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 24.552 ms
+```
+  
+**问题：1w个稀疏点是在训练开始时随机产生的，但是训练过程中（不同epoch），1w个稀疏点的坐标就不再改变了，所以这种也是极为取巧的训练方式**
+
+问题：
+- 4尺度2D→3D反投影(query_view_feats) 总耗时 309.975 ms-350 ms 之间，是耗时最多的
+- codebook量化 + 3D decoder融合耗时 215 ms 左右，这是第二大耗时最多的
+- 考虑到只有稀疏点1w个，且对256^3 有168个1w，所以"query_view_feats×4 2D多视角→稀疏点特征耗时"会×168，大约为140×168=22400ms，这在日常推理中所占时间极大
+- 进一步的，"PointDecoder MLP 368→1 HU"所耗费时间也有可能增加
+
+我的下面改进思路
+- 首先对于这个1w点的选取，每次要送入不同的、随机的1w个点
+- 投影之多2个就可以，也可以就1个低分辨率的体素
+  
+
+## 下面是推理时的各路损耗信息
+```bash
+[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 3110.521 ms
+[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 38.577 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.721 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 70.949 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 38.787 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.849 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.539 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.458 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.537 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.752 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.452 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.607 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.484 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.539 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.626 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.010 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.327 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.527 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.667 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.509 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.609 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.100 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.651 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.620 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.723 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.951 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.671 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.704 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.741 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.613 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.316 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.375 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.616 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.696 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.924 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.753 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.995 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.959 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.655 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.531 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.468 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.565 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.832 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.629 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.593 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.737 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.413 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.580 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.921 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.626 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.652 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.964 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.731 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.595 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.076 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.386 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.637 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.069 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.817 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.681 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.536 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.568 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.640 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.882 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.649 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.676 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.256 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.675 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.803 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.438 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.640 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.585 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.733 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.652 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.623 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.024 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.595 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.447 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.406 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.578 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.006 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.663 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.631 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.031 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.923 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.523 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.522 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.658 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.640 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.828 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.428 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.537 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.881 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.408 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.572 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.624 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.393 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.757 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.939 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.636 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.551 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.611 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.578 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.217 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.490 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.620 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.811 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.895 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.581 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.663 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.657 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.633 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.567 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.594 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.641 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.055 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.727 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.643 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.772 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.451 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.621 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.613 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.659 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.146 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.459 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.620 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.128 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.976 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.705 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.211 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.831 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.662 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.494 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.644 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.553 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.821 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.411 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.622 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.500 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.415 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.603 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.831 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.931 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.542 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.217 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.143 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.623 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.209 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.310 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.636 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.156 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.442 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.591 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.592 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.854 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.613 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.367 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.039 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.569 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.770 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.314 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.818 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.437 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.590 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.675 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.767 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.612 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.690 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.597 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.201 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.536 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.843 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.321 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.611 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.858 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.671 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.679 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.714 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.896 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.541 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.551 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.537 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.702 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 55.209 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.384 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.637 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.341 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.689 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.629 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.914 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.120 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.598 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.434 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.642 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.108 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.107 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.519 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.488 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.741 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.694 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.618 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.365 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.772 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.667 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.165 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.464 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.615 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.180 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.428 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.623 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.306 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.825 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.539 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.979 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 18.144 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.587 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.871 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.511 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.588 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.267 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.950 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.649 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.203 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.494 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.910 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.949 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.968 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.643 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.269 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.432 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.643 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.274 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.433 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.680 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.720 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.713 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.658 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.682 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.364 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.608 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.051 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.558 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.623 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.112 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.887 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.624 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.104 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.740 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.677 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.835 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.465 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.738 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.608 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.364 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.578 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.362 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.646 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.962 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.815 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.841 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.610 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.555 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.462 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.665 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.817 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.745 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.579 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.604 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.515 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.653 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.291 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.069 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.608 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.929 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.340 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.626 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.531 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.535 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.537 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.015 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.590 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.606 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.147 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.762 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.618 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.250 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.786 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.623 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.076 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.386 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.645 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.551 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.541 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.650 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.946 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.558 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.004 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.578 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.636 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.073 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.893 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.680 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.250 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.464 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.519 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.380 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.516 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.636 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.402 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.587 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.595 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.912 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.538 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.556 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.275 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.435 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.580 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.808 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.435 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.599 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.715 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.468 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.625 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.094 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 18.028 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.632 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 55.966 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.682 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.606 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.958 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.469 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.550 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.402 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.605 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.599 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.381 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.495 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.676 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.774 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.708 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.630 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.738 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.850 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.671 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.755 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.443 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.624 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.424 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.430 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.624 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.487 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.801 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.630 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.706 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.921 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 1.125 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.687 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.605 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.649 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.299 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.176 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.575 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.988 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.268 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.643 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.105 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.615 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.553 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.652 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.438 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.655 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.734 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.594 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.611 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.022 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.765 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.618 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.329 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.451 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.782 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.571 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.571 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.807 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.984 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.635 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.266 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.400 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.604 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.906 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.471 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.591 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.559 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.955 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.647 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.688 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.120 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.621 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.505 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 18.137 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.635 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.584 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.406 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.631 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.856 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.554 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.654 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.220 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.822 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.716 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.227 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.723 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.596 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.621 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.964 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.597 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.894 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.667 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.672 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.500 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.398 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.611 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.338 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.559 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.904 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.530 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.664 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.649 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.239 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.418 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.655 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.934 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.329 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.641 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.927 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.760 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.577 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.192 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.395 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.582 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.307 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.862 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.548 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.793 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.635 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.748 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.050 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.343 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.538 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.330 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.518 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.637 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.925 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.443 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.530 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.569 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.191 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.637 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.534 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.719 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.652 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.349 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.610 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.635 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.343 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.278 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.902 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.844 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.366 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.573 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.386 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.032 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.926 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.708 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.407 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.627 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.296 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.431 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.538 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.072 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.603 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.568 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.053 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.680 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.639 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 59.024 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.116 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.653 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 57.585 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.932 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.650 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.311 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.866 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.577 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 56.854 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 17.095 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.570 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 58.336 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 16.443 ms
+[GPU计时] index_3d 3D体素→稀疏点特征耗时 0.359 ms
+[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 43.950 ms
+[GPU计时] PointDecoder MLP 368→1 HU预测耗时 13.703 ms
+[GPU计时] 完整256³评估总耗时(encode+168批forward_points) 12844 ms = 12.8 s
+[GPU计时] 单样本完整推理耗时 16146 ms = 16.1 s
+```
+
+### 问题：
+- query_view_feats×4 2D多视角→稀疏点特征 依旧是耗费时间的第1大户，56-58ms
+- 其次是PointDecoder MLP 368→1 HU 为耗时第2大户 16-17ms
+- 可以看到针对1w个点，计算总和才不到80 ms
+- 但是如果是168个点完整推理下来，需要×168，看到需要16.1s。这里采用的gpu是4060 8GB 版本。论文采用的是3090 只用了3.1s
+- 还有其它的一些中间步骤需要花费时间，难以统计
+
+### 解决 
+- 获得1w稀疏点特征这个阶段，如果×168（即得到256^3 个点），则会花费大约1s。如果直接获得128^3 个点,则只会花费1/8s，大约0.22s
+- 然后我们再对这128^3 个点进行MLP，可大约为16×168÷(2^3 = 8 ) = 336ms
+- 通过上网查资料，得到在 128^3 上做3D CNN Unet，耗时也就 60ms。
+- 综上加起来，也就600ms即可完成一次完整的512^3体数据生成，3s内可以做到5次图像生成
+- 如果以5090甚至更高的显卡，可以做到稀疏6个视角下，500ms生成一次体数据

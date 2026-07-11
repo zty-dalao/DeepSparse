@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import numpy as np
 
@@ -125,14 +126,34 @@ class EncoderV_mv(nn.Module):
         feats_3d_lists = [[] for _ in range(len(view_masks))]       # 创建一个列表feats_3d_lists，长度为view_masks的长度，每个元素都是一个空列表，用于存储每个视图掩码对应的3D特征图。
         if require_2d:                                              # 如果require_2d为True，则创建一个空列表feats_2d_list，用于存储每个视图的2D特征图。
             feats_2d_list = []
-        for feats in self.encoder(x):                               # 通过调用编码器的forward方法，将输入张量x传入编码器，得到编码器输出的特征图feats。这里的feats是一个张量，shape为[B*M, C', W', H']，其中C'表示编码器输出的通道数，W'和H'分别表示编码器输出的宽度和高度。 这里再finetunes1中会直接跳转到base.py的Encoder_base类的forward函数当中。self.encoder(x)的数据是一组多通道的二维投影，以finetune_s1.yaml为例，一个列表：[[48, 128, 32, 32]，[48, 64, 64, 64]，[48, 32, 128, 128]，[48, 16, 256, 256]]
+        # ============================================================
+        # [GPU计时] 2D CNN编码器: 24张投影→4尺度2D特征图
+        # ============================================================
+        gpu_timer_cnn = torch.cuda.Event(enable_timing=True)
+        gpu_timer_cnn_end = torch.cuda.Event(enable_timing=True)
+        gpu_timer_cnn.record()
+
+        self_encoder_x = self.encoder(x)
+
+        gpu_timer_cnn_end.record()
+        torch.cuda.synchronize()
+        print(f"[GPU计时] 2D CNN编码(24投影→4尺度2D特征) 耗时 {gpu_timer_cnn.elapsed_time(gpu_timer_cnn_end):.3f} ms")
+
+        # ============================================================
+        # [GPU计时] query_view_feats ×4: 4尺度2D多视角→3D体素反投影
+        # ============================================================
+        gpu_timer_qvf_all = torch.cuda.Event(enable_timing=True)
+        gpu_timer_qvf_all_end = torch.cuda.Event(enable_timing=True)
+        gpu_timer_qvf_all.record()
+
+        for feats in self_encoder_x:                               # 通过调用编码器的forward方法，将输入张量x传入编码器，得到编码器输出的特征图feats。这里的feats是一个张量，shape为[B*M, C', W', H']，其中C'表示编码器输出的通道数，W'和H'分别表示编码器输出的宽度和高度。 这里再finetunes1中会直接跳转到base.py的Encoder_base类的forward函数当中。self.encoder(x)的数据是一组多通道的二维投影，以finetune_s1.yaml为例，一个列表：[[48, 128, 32, 32]，[48, 64, 64, 64]，[48, 32, 128, 128]，[48, 16, 256, 256]]
             # [B, M, C', W', H']
             feats = feats.reshape(b, m, *feats.shape[1:])           # 将编码器输出的特征图feats的前两维（batch_size和view_num）重新分开，得到一个新的张量feats，shape为[B, M, C', W', H']，其中B表示batch_size，M表示view_num，C'表示编码器输出的通道数，W'和H'分别表示编码器输出的宽度和高度。
             if require_2d:                                          # 如果require_2d为True，则将当前视图的2D特征图feats添加到feats_2d_list中。
                 feats_2d_list.append(feats)
             
             for i, view_mask in enumerate(view_masks):              # 遍历view_masks列表中的每个视图掩码view_mask，并获取其索引i。
-                # if not require_2d:
+
                 feats_3d = query_view_feats(                        # 调用query_view_feats函数，将当前视图的2D特征图feats、投影点坐标data['points_lr_proj']、聚合策略fusion='max'和视图掩码view_mask作为参数，得到对应的3D特征图feats_3d。
                     view_feats=feats,
                     points_proj=data['points_lr_proj'],             # data['points_lr_proj'].shape=torch.Size([2, 24, 32768, 2])。 第一个为batch size，当前一个 batch 中有 2 个样本；第二个view 数量，每个样本有 24 个投影视角；第3个每个视角上投影点的数量，这是因为 lr_res=32，低分辨率网格点数为 32^3 = 32768；第4个，2表示每个点的 2D 投影坐标，即有（x，y）两个分量
@@ -143,6 +164,10 @@ class EncoderV_mv(nn.Module):
                 n_res = int(np.round(n_res))                        # 将n_res四舍五入为整数，确保其为一个有效的分辨率值。
                 feats_3d = feats_3d.reshape(*feats_3d.shape[:2], n_res, n_res, n_res)   # 将3D特征图feats_3d的最后一维重新reshape为一个立方体，得到一个新的张量feats_3d，shape为[B, C', n_res, n_res, n_res]，其中B表示batch_size，C'表示编码器输出的通道数，n_res表示3D特征图的分辨率。finetune_s1下为32×32×32
                 feats_3d_lists[i].append(feats_3d)                  # 将当前视图的3D特征图feats_3d添加到feats_3d_lists列表中对应索引i的子列表中，以便后续处理。如此反复，获得32×32×32到（中间有64，128）256×256×256的3D体素信息.因为没有mask掩码，所以这些都存在feats_3d_lists索引为0的列表元素中，即[[32×32×32,...,2562×256×256]]
+
+        gpu_timer_qvf_all_end.record()
+        torch.cuda.synchronize()
+        print(f"[GPU计时] 4尺度2D→3D反投影(query_view_feats) 总耗时 {gpu_timer_qvf_all.elapsed_time(gpu_timer_qvf_all_end):.3f} ms")
 
         if len(feats_3d_lists) == 1:                                # 如果feats_3d_lists的长度为1，说明只有一个视图掩码，则将feats_3d_lists的第一个元素（即唯一的子列表）赋值给feats_3d_lists，以便后续处理。
             feats_3d_lists = feats_3d_lists[0]

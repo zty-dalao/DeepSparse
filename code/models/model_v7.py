@@ -100,6 +100,15 @@ class Model_mv(nn.Module):
 
         else:
             feats_3d, feats_2d = self.encoder(data, require_2d=True)    # 得到的数据类型如下，feats_3d_lists的长度为4，第一个元素shape为torch.Size([2, 128, 32, 32, 32])，最后一个为torch.Size([2, 16, 32, 32, 32]).feats_2d_lists也是4长度，元素的shape从torch.Size([2, 24, 128, 32, 32])到torch.Size([2, 24, 16, 256, 256])
+            
+            # ============================================================
+            # [GPU计时] codebook量化 + 3D decoder跨尺度融合
+            # 测量4个尺度的codebook VQ + cat拼接 + 3D decoder的总耗时
+            # ============================================================
+            gpu_timer_cb = torch.cuda.Event(enable_timing=True)
+            gpu_timer_cb_end = torch.cuda.Event(enable_timing=True)
+            gpu_timer_cb.record()
+
             for i, feats in enumerate(feats_3d):                        # 循环4此
                 n_layer += 1
 
@@ -111,7 +120,11 @@ class Model_mv(nn.Module):
                 if i > 0:
                     feats = torch.cat([feats, feats_out], dim=1)        # 第一个不用维度方向上拼接，直接进行decoder获得体素信息。第2个的直接在维度上与前面已经融合的好的3d体素在维度上拼接，下一行再进行融合。如此反复，从128channel向16channel融合.
                 feats_out = self.decoders[i](feats)                     # 进行decode，获取真正的体素信息。feats_out.shape 总是等于 torch.Size([2, 128, 32, 32, 32])
-        
+            
+            gpu_timer_cb_end.record()
+            torch.cuda.synchronize()
+            print(f"[GPU计时] codebook量化 + 3D decoder融合耗时 {gpu_timer_cb.elapsed_time(gpu_timer_cb_end):.3f} ms")
+
         return {
             'feats_2d': feats_2d,               # feats_2d_lists也是4长度，元素的shape从torch.Size([2, 24, 128, 32, 32])到torch.Size([2, 24, 16, 256, 256])
             'feats_3d': feats_out,              # feats_3d_lists的长度为4，第一个元素shape为torch.Size([2, 128, 32, 32, 32])，最后一个为torch.Size([2, 16, 32, 32, 32])
@@ -119,7 +132,28 @@ class Model_mv(nn.Module):
         }
     
     def forward_points(self, feats_dict, data):
+
+        # ============================================================
+        # [GPU计时] index_3d: 从3D特征体(128,32,32,32)中按点坐标采样
+        # ============================================================
+        gpu_timer_idx3d = torch.cuda.Event(enable_timing=True)
+        gpu_timer_idx3d_end = torch.cuda.Event(enable_timing=True)
+        gpu_timer_idx3d.record()
+
         p_feats = index_3d(feats_dict['feats_3d'], data['points_ct'])   # 返回值 p_feats的shape为[2, 128, 10000]。data['points_ct']是一个稀疏采样点
+        
+        gpu_timer_idx3d_end.record()
+        torch.cuda.synchronize()
+        print(f"[GPU计时] index_3d 3D体素→稀疏点特征耗时 {gpu_timer_idx3d.elapsed_time(gpu_timer_idx3d_end):.3f} ms")
+
+
+        # ============================================================
+        # [GPU计时] query_view_feats ×4: 2D多视角特征→稀疏点特征
+        # 将10000个训练点从4个尺度的2D多视角特征图中采样并拼接为368维
+        # ============================================================
+        gpu_timer_qvf = torch.cuda.Event(enable_timing=True)
+        gpu_timer_qvf_end = torch.cuda.Event(enable_timing=True)
+        gpu_timer_qvf.record()
 
         for feats_2d in feats_dict['feats_2d']:     # len(feats_dict['feats_2d'])=4。元素的shape从torch.Size([2, 24, 128, 32, 32])到torch.Size([2, 24, 16, 256, 256])
             p_feats_2d = query_view_feats(
@@ -130,7 +164,23 @@ class Model_mv(nn.Module):
             )
             p_feats = torch.cat([p_feats_2d, p_feats], dim=1)
 
+        gpu_timer_qvf_end.record()
+        torch.cuda.synchronize()
+        print(f"[GPU计时] query_view_feats×4 2D多视角→稀疏点特征耗时 {gpu_timer_qvf.elapsed_time(gpu_timer_qvf_end):.3f} ms")
+
+        # ============================================================
+        # [GPU计时] PointDecoder MLP: 368维点特征→1维HU值预测
+        # ============================================================
+        gpu_timer_mlp = torch.cuda.Event(enable_timing=True)
+        gpu_timer_mlp_end = torch.cuda.Event(enable_timing=True)
+        gpu_timer_mlp.record()
+
         p_pred = self.point_decoder(p_feats)        # 进入point_decoder.py 进行点查询，将368channel消去，得到1w个点真实的HU值   p_feats.shape = torch.Size([2, 128, 10000])。p_pred.shape = torch.Size([2, 1, 10000])
+        
+        gpu_timer_mlp_end.record()
+        torch.cuda.synchronize()
+        print(f"[GPU计时] PointDecoder MLP 368→1 HU预测耗时 {gpu_timer_mlp.elapsed_time(gpu_timer_mlp_end):.3f} ms")
+
         return p_pred
 
     def forward(self, data, is_eval=False, eval_npoint=100000):
@@ -142,6 +192,13 @@ class Model_mv(nn.Module):
                 'loss_vq': feats_dict['loss_vq']
             }
         else:
+            # ============================================================
+            # [GPU计时] 完整256³评估总耗时(encode + 分批forward_points)
+            # ============================================================
+            gpu_timer_eval = torch.cuda.Event(enable_timing=True)
+            gpu_timer_eval_end = torch.cuda.Event(enable_timing=True)
+            gpu_timer_eval.record()
+
             total_npoint = data['points_ct'].shape[1]
             n_batch = int(np.ceil(total_npoint / eval_npoint))
 
@@ -159,6 +216,10 @@ class Model_mv(nn.Module):
                 
                 points_pred = self.forward_points(feats_dict, tmp_data) # B, C, N
                 pred_list.append(points_pred)
+
+            gpu_timer_eval_end.record()
+            torch.cuda.synchronize()
+            print(f"[GPU计时] 完整256³评估总耗时(encode+{n_batch}批forward_points) {gpu_timer_eval.elapsed_time(gpu_timer_eval_end):.0f} ms = {gpu_timer_eval.elapsed_time(gpu_timer_eval_end)/1000:.1f} s")
 
             return {
                 'points_pred': torch.cat(pred_list, dim=2)
