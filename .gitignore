@@ -2,5 +2,14 @@ logs/
 __pycache__/
 *.pyc
 *.pyo
-data/
+
+# Ignore large data files and intermediate outputs under data/
+data/**
+# But keep preprocessing scripts, configs, and documentation
+!data/**/*.py
+!data/**/*.sh
+!data/**/*.yaml
+!data/**/*.json
+!data/**/*.md
+
 pdf/

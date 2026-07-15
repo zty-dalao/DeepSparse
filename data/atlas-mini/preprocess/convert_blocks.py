@@ -43,6 +43,9 @@ if __name__ == '__main__':
                         help='Output directory for resampled_v2/ images (uint8, 1.6mm)')
     parser.add_argument('--block_dir', type=str, required=True,
                         help='Output directory for blocks/')
+    parser.add_argument('--start_idx', type=int, default=0,
+                        help='1-based starting index for resume. E.g. --start_idx 400 will skip the first '
+                             '399 sorted files and start from the 400th. Default: 0 (process all).')
     args = parser.parse_args()
 
     os.makedirs(args.save_dir, exist_ok=True)
@@ -52,10 +55,32 @@ if __name__ == '__main__':
     block_size = [64, 64, 64]
     spacing_out = [1.6, 1.6, 1.6]
 
-    blocks_coords, block_list = generate_blocks(resolution, block_size)
-    blocks_coords_saved = False
+    # Sort for deterministic ordering; resume relies on stable indices.
+    file_names = sorted(os.listdir(args.data_dir))
+    total = len(file_names)
 
-    for name in tqdm(os.listdir(args.data_dir), ncols=50):
+    if args.start_idx > 0:
+        if args.start_idx > total:
+            raise ValueError(f'--start_idx {args.start_idx} exceeds total files ({total})')
+        file_names = file_names[args.start_idx - 1:]
+        print(f'Resume: skipping first {args.start_idx - 1} files, '
+              f'processing {len(file_names)} remaining (indices {args.start_idx}–{total}).')
+    else:
+        print(f'Processing all {total} files (use --start_idx N to resume from the N-th file).')
+
+    blocks_coords, block_list = generate_blocks(resolution, block_size)
+    blocks_coords_saved = os.path.exists(os.path.join(args.block_dir, 'blocks_coords.npy'))
+
+    for name in tqdm(file_names, ncols=50):
+        stem = name.split('.')[0]
+
+        # -- skip if already fully processed (resampled_v2 + all blocks exist) --
+        save_path = os.path.join(args.save_dir, f'{stem}.nii.gz')
+        first_block_path = os.path.join(args.block_dir, f'{stem}_block-0.npy')
+        last_block_path = os.path.join(args.block_dir, f'{stem}_block-{len(block_list) - 1}.npy')
+        if os.path.exists(save_path) and os.path.exists(first_block_path) and os.path.exists(last_block_path):
+            continue
+
         path = os.path.join(args.data_dir, name)
         itk_img = sitk.ReadImage(path)
         image = sitk.GetArrayFromImage(itk_img)
@@ -70,11 +95,9 @@ if __name__ == '__main__':
             blocks_coords_saved = True
 
         # save block values
-        stem = name.split('.')[0]
         for i, block in enumerate(block_list):
             block_vals = image[block[:, 0], block[:, 1], block[:, 2]]
             np.save(os.path.join(args.block_dir, f'{stem}_block-{i}.npy'), block_vals)
 
         # save resampled_v2 image (uint8, transposed back)
-        save_path = os.path.join(args.save_dir, f'{stem}.nii.gz')
         sitk_save(save_path, image.transpose(2, 1, 0), spacing_out)
