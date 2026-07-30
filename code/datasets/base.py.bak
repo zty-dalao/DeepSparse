@@ -58,7 +58,6 @@ dataset_img_dir_dict = {
     'pelvis':     'PENGWIN',
     'abdomen':    'PANORAMA',
     'thorax':     'Thorax Fast',
-    'paired':     'paired',            # 真实 Varian XIM 投影 (1280×320)
 }
 
 class CBCT_dataset(Dataset):
